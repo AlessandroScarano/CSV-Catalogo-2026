@@ -7,6 +7,30 @@ const REMOTE_HTTPS_SOURCE_URL = "https://www.glasscom.it/Catalogo2026/origineCat
 const REMOTE_HTTPS_SOURCE_NAME = `${SOURCE_LABEL} (remota HTTPS)`;
 const REMOTE_HTTP_SOURCE_URL = "http://www.glasscom.it/Catalogo2026/origineCat2026.csv";
 const REMOTE_HTTP_SOURCE_NAME = `${SOURCE_LABEL} (remota HTTP)`;
+const REMOTE_PROXY_SOURCES = [
+  {
+    url: `https://r.jina.ai/${REMOTE_HTTPS_SOURCE_URL}`,
+    displayUrl: REMOTE_HTTPS_SOURCE_URL,
+    name: `${SOURCE_LABEL} (mirror r.jina.ai HTTPS)`,
+    sourceType: "remote-proxy-https",
+    fetchOptions: {
+      cache: "no-cache",
+      mode: "cors",
+      credentials: "omit"
+    }
+  },
+  {
+    url: `https://r.jina.ai/${REMOTE_HTTP_SOURCE_URL}`,
+    displayUrl: REMOTE_HTTP_SOURCE_URL,
+    name: `${SOURCE_LABEL} (mirror r.jina.ai HTTP)`,
+    sourceType: "remote-proxy-http",
+    fetchOptions: {
+      cache: "no-cache",
+      mode: "cors",
+      credentials: "omit"
+    }
+  }
+];
 const SOURCE_CACHE_TEXT_KEY = "catalogo-source-cache-text";
 const SOURCE_CACHE_META_KEY = "catalogo-source-cache-meta";
 
@@ -544,6 +568,12 @@ function updateFileInfo(meta) {
       case "remote-http":
         details.push("Fonte remota (HTTP)");
         break;
+      case "remote-proxy-http":
+        details.push("Fonte remota (mirror HTTP)");
+        break;
+      case "remote-proxy-https":
+        details.push("Fonte remota (mirror HTTPS)");
+        break;
       case "cache":
         details.push("Fonte ripristinata dalla cache");
         break;
@@ -644,6 +674,10 @@ function describeSourceError(attempt, error, context = {}) {
     hints.push("Download remoto non riuscito (controlla la connessione o i permessi CORS della sorgente).");
   }
 
+  if (attempt.sourceType?.startsWith("remote-proxy") && /blocked by client/i.test(normalizedBase)) {
+    hints.push("Richiesta bloccata dal browser o da un'estensione di sicurezza. Disabilita il blocco o aggiungi un'eccezione per il dominio del proxy.");
+  }
+
   if (!hints.length) {
     return normalizedBase;
   }
@@ -716,6 +750,10 @@ async function loadSource(showNotification = true) {
       });
     }
 
+    for (const proxySource of REMOTE_PROXY_SOURCES) {
+      attempts.push({ ...proxySource });
+    }
+
     const errors = [];
     for (const attempt of attempts) {
       try {
@@ -742,12 +780,24 @@ async function loadSource(showNotification = true) {
           sourceType: attempt.sourceType
         });
         if (showNotification) {
-          const successLabel =
-            attempt.sourceType === "local"
-              ? "Origine locale caricata"
-              : attempt.sourceType === "remote-http"
-                ? "Origine remota HTTP caricata"
-                : "Origine remota HTTPS caricata";
+          let successLabel = "Origine caricata";
+          switch (attempt.sourceType) {
+            case "local":
+              successLabel = "Origine locale caricata";
+              break;
+            case "remote-http":
+              successLabel = "Origine remota HTTP caricata";
+              break;
+            case "remote-https":
+              successLabel = "Origine remota HTTPS caricata";
+              break;
+            case "remote-proxy-http":
+            case "remote-proxy-https":
+              successLabel = "Origine remota caricata tramite mirror";
+              break;
+            default:
+              successLabel = "Origine caricata";
+          }
           showMessage(`${successLabel} (${rows.length} righe)`, "success");
         }
         return true;
@@ -775,7 +825,11 @@ async function loadSource(showNotification = true) {
               ? "locale"
               : attempt.sourceType === "remote-http"
                 ? "remota HTTP"
-                : "remota HTTPS";
+                : attempt.sourceType === "remote-proxy-http"
+                  ? "remota (mirror HTTP)"
+                  : attempt.sourceType === "remote-proxy-https"
+                    ? "remota (mirror HTTPS)"
+                    : "remota HTTPS";
           return `${label}: ${message}`;
         })
         .join(" | ");
@@ -797,7 +851,11 @@ async function loadSource(showNotification = true) {
             ? "locale"
             : attempt.sourceType === "remote-http"
               ? "remota HTTP"
-              : "remota HTTPS";
+              : attempt.sourceType === "remote-proxy-http"
+                ? "remota (mirror HTTP)"
+                : attempt.sourceType === "remote-proxy-https"
+                  ? "remota (mirror HTTPS)"
+                  : "remota HTTPS";
         return `${label}: ${message}`;
       })
       .join(" | ");

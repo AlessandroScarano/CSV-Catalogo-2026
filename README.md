@@ -27,7 +27,7 @@ Questa applicazione è una Single Page Application completamente client-side che
 
 1. Recupera il file ufficiale `origineCat2026.csv` e copialo nella stessa cartella di `index.html` e `app.js`.
 2. All'avvio l'app leggerà questa copia locale (nessun upload manuale necessario).
-3. Se il file locale non è presente o non è accessibile, verrà tentato automaticamente il download dall'URL ufficiale `https://www.glasscom.it/Catalogo2026/origineCat2026.csv` (e, quando la pagina non è servita in HTTPS, anche dalla variante `http://`).
+3. Se il file locale non è presente o non è accessibile, verrà tentato automaticamente il download dall'URL ufficiale `https://www.glasscom.it/Catalogo2026/origineCat2026.csv` (e, quando la pagina non è servita in HTTPS, anche dalla variante `http://`). Qualora il server remoto blocchi la richiesta CORS, l'app utilizza un mirror pubblico (`https://r.jina.ai`) per recuperare lo stesso file.
 4. L'ultima versione caricata viene memorizzata nel browser per avvii successivi (anche se il file o la rete non sono disponibili).
 
 ## Come testare le funzionalità
@@ -52,7 +52,7 @@ Questa applicazione è una Single Page Application completamente client-side che
 ## Origine locale e remota
 
 - Il file locale ha priorità: se presente, viene sempre utilizzato e puoi aggiornarlo semplicemente sostituendo il CSV nella cartella.
-- Se il file locale non è accessibile, l'app tenta il download dell'origine remota passando prima da HTTPS e, quando possibile, dalla variante HTTP (può fallire se il server non espone gli header CORS necessari o se il browser blocca contenuti misti).
+- Se il file locale non è accessibile, l'app tenta il download dell'origine remota passando prima da HTTPS e, quando possibile, dalla variante HTTP. Se entrambi i tentativi sono bloccati dal server (assenza di CORS), viene utilizzato automaticamente il mirror `https://r.jina.ai`, che fornisce gli header necessari.
 - Dopo il primo caricamento valido, il CSV viene memorizzato nel browser per velocizzare l'avvio successivo e gestire eventuali errori momentanei.
 - Il pulsante **"Ricarica origine"** riesegue i tentativi in ordine (locale → remoto) e aggiorna la cache se viene trovata una sorgente valida.
 
@@ -60,7 +60,8 @@ Questa applicazione è una Single Page Application completamente client-side che
 
 - Vengono considerate al massimo cinque varianti per ogni SKU padre (le successive vengono ignorate con messaggio informativo).
 - L'apertura diretta da `file://` impedisce alla pagina di leggere `origineCat2026.csv`. Utilizza sempre un server statico locale (anche temporaneo) per lavorare con la copia accanto alla pagina.
-- Se servi l'applicazione in HTTPS, il fallback HTTP dell'origine remota verrà bloccato dal browser: assicurati di avere la copia locale oppure abilita una sorgente remota con HTTPS valido.
+- Se servi l'applicazione in HTTPS, il fallback HTTP dell'origine remota verrà bloccato dal browser, ma il mirror `https://r.jina.ai` continuerà a funzionare perché fornisce il file tramite HTTPS.
+- Il mirror pubblico richiede comunque una connessione a Internet; in assenza di rete verrà utilizzata l'ultima copia salvata nella cache locale.
 - Se non stai usando un server statico, il file locale potrebbe non essere leggibile e il browser segnalerà l'errore "Failed to fetch".
 - Se appare il messaggio "Libreria Papa Parse non disponibile", controlla la connessione internet o eventuali blocchi verso le CDN utilizzate (jsDelivr).
 - Le colonne del CSV vengono rilevate con nomi tolleranti, ma intestazioni completamente assenti o molto atipiche potrebbero richiedere un adattamento manuale del file sorgente.
