@@ -1,7 +1,9 @@
 /* global Papa, saveAs */
 
-const REMOTE_SOURCE_URL = "http://www.glasscom.it/Catalogo2026/origineCat2026.csv";
+const REMOTE_SOURCE_URL = "https://www.glasscom.it/Catalogo2026/origineCat2026.csv";
 const REMOTE_SOURCE_NAME = "Origine Catalogo 2026";
+const SOURCE_CACHE_TEXT_KEY = "catalogo-source-cache-text";
+const SOURCE_CACHE_META_KEY = "catalogo-source-cache-meta";
 
 // Stato globale dell'applicazione
 const state = {
@@ -47,6 +49,24 @@ const state = {
 };
 
 /**
+ * Format a timestamp into a localized string.
+ * @param {number|undefined} timestamp
+ * @returns {string}
+ */
+function formatTimestamp(timestamp) {
+  if (!timestamp && timestamp !== 0) return "";
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("it-IT", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+/**
  * Mostra un messaggio temporaneo all'utente.
  * @param {string} text
  * @param {"success"|"error"|"warning"} type
@@ -59,6 +79,66 @@ function showMessage(text, type = "success") {
   setTimeout(() => {
     messageBox.className = messageBox.className.replace("show", "").trim();
   }, 4000);
+}
+
+/**
+ * Salva la versione più recente dell'origine nel localStorage.
+ * @param {string} text
+ * @param {number} rowCount
+ */
+function persistSourceCache(text, rowCount) {
+  try {
+    const storage = window.localStorage;
+    if (!storage) return;
+    storage.setItem(SOURCE_CACHE_TEXT_KEY, text);
+    storage.setItem(
+      SOURCE_CACHE_META_KEY,
+      JSON.stringify({ rowCount, timestamp: Date.now() })
+    );
+  } catch (error) {
+    console.warn("Impossibile salvare la cache dell'origine", error);
+  }
+}
+
+/**
+ * Recupera l'ultima copia salvata dell'origine dal localStorage.
+ * @returns {Promise<{rows: object[], columnMap: object, meta: {timestamp?: number}}|null>}
+ */
+async function getCachedSource() {
+  try {
+    const storage = window.localStorage;
+    if (!storage) return null;
+    const text = storage.getItem(SOURCE_CACHE_TEXT_KEY);
+    if (!text) return null;
+    const metaRaw = storage.getItem(SOURCE_CACHE_META_KEY);
+    const meta = metaRaw ? JSON.parse(metaRaw) : {};
+    const rows = await parseSourceCsv(text);
+    if (!rows.length) return null;
+    const columnMap = findColumns(rows[0]);
+    if (!columnMap?.sku || !columnMap?.parent) return null;
+    return {
+      rows,
+      columnMap,
+      text,
+      meta
+    };
+  } catch (error) {
+    console.warn("Impossibile utilizzare la cache dell'origine", error);
+    return null;
+  }
+}
+
+/**
+ * Applica una sorgente all'applicazione e aggiorna la UI.
+ * @param {object[]} rows
+ * @param {object} columnMap
+ * @param {{name: string, rowCount: number, url?: string, cachedAt?: number, stale?: boolean}} meta
+ */
+function applySource(rows, columnMap, meta) {
+  state.sourceRows = rows;
+  state.columnMap = columnMap;
+  state.sourceMeta = meta;
+  updateFileInfo(meta);
 }
 
 /**
@@ -428,20 +508,30 @@ function renderTable() {
 
 /**
  * Aggiorna le informazioni dell'origine caricata.
- * @param {{name: string, rowCount: number, url?: string}|null} meta
+ * @param {{name: string, rowCount: number, url?: string, cachedAt?: number, stale?: boolean}|null} meta
  */
 function updateFileInfo(meta) {
   const nameEl = document.getElementById("file-name");
   const countEl = document.getElementById("row-count");
-  const reloadBtn = document.getElementById("reload-btn");
+  const metaEl = document.getElementById("file-meta");
+  if (!nameEl || !countEl || !metaEl) return;
   if (meta) {
     nameEl.textContent = `${meta.name}${meta.url ? ` (${meta.url})` : ""}`;
     countEl.textContent = `${meta.rowCount} righe`;
-    reloadBtn.disabled = false;
+    const details = [];
+    if (meta.cachedAt) {
+      details.push(`Ultimo aggiornamento: ${formatTimestamp(meta.cachedAt)}`);
+    }
+    if (meta.stale) {
+      details.push("Mostrando copia salvata");
+    }
+    metaEl.textContent = details.join(" • ");
+    metaEl.hidden = details.length === 0;
   } else {
     nameEl.textContent = "Origine non caricata";
     countEl.textContent = "0 righe";
-    reloadBtn.disabled = true;
+    metaEl.textContent = "";
+    metaEl.hidden = true;
   }
 }
 
@@ -479,46 +569,73 @@ function restoreModelRows() {
  * @param {{name: string, rowCount: number, persisted?: boolean}} meta
  */
 async function loadRemoteSource(showNotification = true) {
+  const nameEl = document.getElementById("file-name");
+  const countEl = document.getElementById("row-count");
+  const reloadBtn = document.getElementById("reload-btn");
+  if (nameEl) {
+    nameEl.textContent = "Caricamento origine...";
+  }
+  if (countEl) {
+    countEl.textContent = "--";
+  }
+  if (reloadBtn) {
+    reloadBtn.disabled = true;
+  }
   try {
-    const nameEl = document.getElementById("file-name");
-    const countEl = document.getElementById("row-count");
-    const reloadBtn = document.getElementById("reload-btn");
-    if (nameEl) {
-      nameEl.textContent = "Caricamento origine...";
-    }
-    if (countEl) {
-      countEl.textContent = "--";
-    }
-    if (reloadBtn) {
-      reloadBtn.disabled = true;
-    }
-    const response = await fetch(REMOTE_SOURCE_URL, { cache: "no-cache" });
+    const response = await fetch(REMOTE_SOURCE_URL, {
+      cache: "no-cache",
+      mode: "cors",
+      credentials: "omit"
+    });
     if (!response.ok) {
       throw new Error(`Impossibile scaricare l'origine remota (${response.status})`);
     }
     const text = await response.text();
     const rows = await parseSourceCsv(text);
-    state.sourceRows = rows;
-    state.columnMap = findColumns(rows[0]);
-    if (!state.columnMap?.sku || !state.columnMap?.parent) {
+    const columnMap = findColumns(rows[0]);
+    if (!columnMap?.sku || !columnMap?.parent) {
       throw new Error("Colonne essenziali mancanti nell'origine remota.");
     }
-    state.sourceMeta = {
+    persistSourceCache(text, rows.length);
+    applySource(rows, columnMap, {
       name: REMOTE_SOURCE_NAME,
       rowCount: rows.length,
-      url: REMOTE_SOURCE_URL
-    };
-    updateFileInfo(state.sourceMeta);
+      url: REMOTE_SOURCE_URL,
+      cachedAt: Date.now(),
+      stale: false
+    });
     if (showNotification) {
       showMessage(`Origine remota caricata (${rows.length} righe)`, "success");
     }
   } catch (error) {
     console.error(error);
-    state.sourceRows = [];
-    state.columnMap = null;
-    state.sourceMeta = null;
-    updateFileInfo(null);
-    showMessage(error.message || "Errore durante il download dell'origine remota", "error");
+    const cached = await getCachedSource();
+    if (cached) {
+      applySource(cached.rows, cached.columnMap, {
+        name: REMOTE_SOURCE_NAME,
+        rowCount: cached.rows.length,
+        url: REMOTE_SOURCE_URL,
+        cachedAt: cached.meta?.timestamp,
+        stale: true
+      });
+      const message = error.message
+        ? `Impossibile aggiornare l'origine remota: ${error.message}. È stata utilizzata l'ultima copia salvata.`
+        : "Impossibile aggiornare l'origine remota. È stata utilizzata l'ultima copia salvata.";
+      showMessage(message, "warning");
+    } else {
+      state.sourceRows = [];
+      state.columnMap = null;
+      state.sourceMeta = null;
+      updateFileInfo(null);
+      const message = error.message
+        ? `Origine non disponibile: ${error.message}`
+        : "Origine non disponibile. Controlla la connessione e riprova.";
+      showMessage(message, "error");
+    }
+  } finally {
+    if (reloadBtn) {
+      reloadBtn.disabled = false;
+    }
   }
 }
 
@@ -561,5 +678,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
   restoreModelRows();
   renderTable();
-  await loadRemoteSource(false);
+  const cached = await getCachedSource();
+  if (cached) {
+    applySource(cached.rows, cached.columnMap, {
+      name: REMOTE_SOURCE_NAME,
+      rowCount: cached.rows.length,
+      url: REMOTE_SOURCE_URL,
+      cachedAt: cached.meta?.timestamp,
+      stale: true
+    });
+    showMessage("Origine ripristinata dall'ultima copia salvata. Aggiornamento in corso...", "warning");
+  }
+  await loadRemoteSource(!cached);
 });

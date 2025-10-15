@@ -169,6 +169,11 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.file-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .badge {
   background: #e0e7ff;
   color: #1d4ed8;

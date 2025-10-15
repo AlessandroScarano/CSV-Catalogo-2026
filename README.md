@@ -22,8 +22,9 @@ Questa applicazione è una Single Page Application completamente client-side che
 ## Come testare le funzionalità
 
 1. **Sezione "Origine Catalogo 2026"**
-   - All'avvio viene scaricato il file ufficiale da `http://www.glasscom.it/Catalogo2026/origineCat2026.csv`.
-   - Il pannello mostra nome e numero di righe disponibili; usa "Ricarica origine" per forzare un aggiornamento.
+   - All'avvio viene scaricato il file ufficiale da `https://www.glasscom.it/Catalogo2026/origineCat2026.csv`.
+   - Se hai già aperto l'app in precedenza, la copia salvata localmente viene ripristinata immediatamente e aggiornata in background.
+   - Il pannello mostra nome, numero di righe e ultima data di aggiornamento; usa "Ricarica origine" per forzare un nuovo download.
 
 2. **Sezione "Cerca codice"**
    - Inserisci uno SKU padre o variante e premi "Aggiungi".
@@ -43,8 +44,9 @@ Se vuoi fare test offline puoi salvare manualmente il contenuto dell'origine uff
 ## Origine remota
 
 - L'origine è sempre scaricata dall'URL indicato e non è possibile sostituirla tramite upload locale.
+- Dopo il primo download, il CSV viene memorizzato nel browser per velocizzare l'avvio successivo.
 - Il pulsante **"Ricarica origine"** forza un nuovo download in caso di aggiornamenti sul server.
-- In caso di errori di rete viene mostrato un messaggio e l'anteprima resta inutilizzabile finché il download non va a buon fine.
+- In caso di errori di rete viene utilizzata automaticamente l'ultima copia salvata; se non disponibile, viene mostrato un messaggio d'errore.
 
 ## Limitazioni note
 
