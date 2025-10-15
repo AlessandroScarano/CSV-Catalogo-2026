@@ -18,7 +18,7 @@
     <section class="readme" aria-labelledby="readme-heading">
       <h2 id="readme-heading">Guida rapida</h2>
       <ul>
-        <li>Carica un CSV UTF-8 con separatore <code>;</code> contenente SKU padre e varianti.</li>
+        <li>L'origine ufficiale viene caricata automaticamente dal Catalogo 2026.</li>
         <li>Inserisci uno SKU padre o variante per aggiungere il gruppo all'anteprima.</li>
         <li>Massimo 5 varianti per riga del modello finale; le eccedenze vengono ignorate.</li>
         <li>Esporta il modello finale in qualsiasi momento oppure svuota l'anteprima.</li>
@@ -28,17 +28,16 @@
 
     <section class="panel" aria-labelledby="upload-heading">
       <div class="panel-header">
-        <h2 id="upload-heading">1. Carica CSV di origine</h2>
+        <h2 id="upload-heading">1. Origine Catalogo 2026</h2>
       </div>
       <div class="panel-body">
-        <label for="csv-input" class="sr-only">Carica file CSV</label>
-        <input type="file" id="csv-input" accept=".csv" />
+        <p class="hint">La sorgente viene scaricata da <code>http://www.glasscom.it/Catalogo2026/origineCat2026.csv</code>.</p>
         <div class="file-info" aria-live="polite">
-          <span id="file-name">Nessun file caricato</span>
+          <span id="file-name">Origine non caricata</span>
           <span id="row-count" class="badge">0 righe</span>
         </div>
         <div class="actions">
-          <button id="reload-btn" type="button" class="secondary" aria-label="Rimuovi o ricarica file" disabled>Rimuovi / Ricarica</button>
+          <button id="reload-btn" type="button" class="secondary" aria-label="Ricarica l'origine remota" disabled>Ricarica origine</button>
         </div>
       </div>
     </section>

@@ -1,13 +1,7 @@
 /* global Papa, saveAs */
 
-const EMBEDDED_SOURCE_NAME = "Origine predefinita";
-const EMBEDDED_SOURCE = `sku;parent_sku;post_title;categoria;regular_price;meta:attribute_pa_finitura;dimensione;"per vetro";materiale;um
-PARENT1;;Titolo Parent 1;Categoria A;1234,56;Finitura base;L;Si;Acciaio;PZ
-VAR1;PARENT1;Variante 1;Categoria A;1234,56;Finitura 1;L;Si;Acciaio;PZ
-VAR2;PARENT1;Variante 2;Categoria A;1.234,56;Finitura 2;L;Si;Acciaio;PZ
-VAR3;PARENT1;Variante 3;Categoria A;1234.56;Finitura 3;L;Si;Acciaio;PZ
-PARENT2;;Titolo Parent 2;Categoria B;2000;Finitura base;M;No;Alluminio;CF
-VAR4;PARENT2;Variante 4;Categoria B;1999,99;Finitura 4;M;No;Alluminio;CF`;
+const REMOTE_SOURCE_URL = "http://www.glasscom.it/Catalogo2026/origineCat2026.csv";
+const REMOTE_SOURCE_NAME = "Origine Catalogo 2026";
 
 // Stato globale dell'applicazione
 const state = {
@@ -49,9 +43,7 @@ const state = {
     "@image_SchedeTecniche"
   ],
   columnMap: null,
-  localStorageKey: "catalogo-model-rows",
-  sourceStorageKey: "catalogo-source-rows",
-  sourceMetaKey: "catalogo-source-meta"
+  localStorageKey: "catalogo-model-rows"
 };
 
 /**
@@ -147,16 +139,16 @@ function isParentEmpty(row) {
 
 /**
  * Effettua il parsing del CSV di origine.
- * @param {File} file
+ * @param {File|string} data
  * @returns {Promise<object[]>}
  */
-function parseSourceCsv(file) {
+function parseSourceCsv(data) {
   return new Promise((resolve, reject) => {
     if (!window.Papa) {
       reject(new Error("Libreria Papa Parse non disponibile. Controlla la connessione e ricarica la pagina."));
       return;
     }
-    Papa.parse(file, {
+    Papa.parse(data, {
       delimiter: ";",
       header: true,
       skipEmptyLines: true,
@@ -307,7 +299,7 @@ function addByCode(code) {
     return;
   }
   if (!state.sourceRows.length || !state.columnMap) {
-    showMessage("Carica prima un CSV di origine", "error");
+    showMessage("Origine non disponibile. Attendi il caricamento e riprova.", "error");
     return;
   }
   const index = indexOfMainForCode(trimmed);
@@ -435,20 +427,19 @@ function renderTable() {
 }
 
 /**
- * Aggiorna le informazioni del file caricato.
- * @param {File|null} file
- * @param {number} rowCount
+ * Aggiorna le informazioni dell'origine caricata.
+ * @param {{name: string, rowCount: number, url?: string}|null} meta
  */
 function updateFileInfo(meta) {
   const nameEl = document.getElementById("file-name");
   const countEl = document.getElementById("row-count");
   const reloadBtn = document.getElementById("reload-btn");
   if (meta) {
-    nameEl.textContent = meta.name;
+    nameEl.textContent = `${meta.name}${meta.url ? ` (${meta.url})` : ""}`;
     countEl.textContent = `${meta.rowCount} righe`;
     reloadBtn.disabled = false;
   } else {
-    nameEl.textContent = "Nessun file caricato";
+    nameEl.textContent = "Origine non caricata";
     countEl.textContent = "0 righe";
     reloadBtn.disabled = true;
   }
@@ -487,84 +478,47 @@ function restoreModelRows() {
  * @param {object[]} rows
  * @param {{name: string, rowCount: number, persisted?: boolean}} meta
  */
-function persistSourceRows(rows, meta) {
+async function loadRemoteSource(showNotification = true) {
   try {
-    window.localStorage.setItem(state.sourceStorageKey, JSON.stringify(rows));
-    window.localStorage.setItem(state.sourceMetaKey, JSON.stringify(meta));
-  } catch (error) {
-    console.warn("Impossibile salvare l'origine su localStorage", error);
-  }
-}
-
-/**
- * Ripristina la sorgente del CSV da localStorage se disponibile.
- * @returns {boolean}
- */
-function restoreSourceRows() {
-  try {
-    const rawRows = window.localStorage.getItem(state.sourceStorageKey);
-    if (!rawRows) return false;
-    const rows = JSON.parse(rawRows);
-    if (!Array.isArray(rows) || !rows.length) {
-      return false;
+    const nameEl = document.getElementById("file-name");
+    const countEl = document.getElementById("row-count");
+    const reloadBtn = document.getElementById("reload-btn");
+    if (nameEl) {
+      nameEl.textContent = "Caricamento origine...";
     }
-    const rawMeta = window.localStorage.getItem(state.sourceMetaKey);
-    const storedMeta = rawMeta ? JSON.parse(rawMeta) : null;
+    if (countEl) {
+      countEl.textContent = "--";
+    }
+    if (reloadBtn) {
+      reloadBtn.disabled = true;
+    }
+    const response = await fetch(REMOTE_SOURCE_URL, { cache: "no-cache" });
+    if (!response.ok) {
+      throw new Error(`Impossibile scaricare l'origine remota (${response.status})`);
+    }
+    const text = await response.text();
+    const rows = await parseSourceCsv(text);
     state.sourceRows = rows;
     state.columnMap = findColumns(rows[0]);
     if (!state.columnMap?.sku || !state.columnMap?.parent) {
-      throw new Error("Colonne necessarie mancanti nell'origine salvata.");
+      throw new Error("Colonne essenziali mancanti nell'origine remota.");
     }
     state.sourceMeta = {
-      name: storedMeta?.name || "Origine salvata",
+      name: REMOTE_SOURCE_NAME,
       rowCount: rows.length,
-      persisted: true
+      url: REMOTE_SOURCE_URL
     };
     updateFileInfo(state.sourceMeta);
-    showMessage(`Origine ripristinata (${rows.length} righe)`, "success");
-    return true;
-  } catch (error) {
-    console.warn("Impossibile ripristinare l'origine salvata", error);
-    return false;
-  }
-}
-
-/**
- * Rimuove l'origine salvata dal browser.
- */
-function clearPersistedSource() {
-  try {
-    window.localStorage.removeItem(state.sourceStorageKey);
-    window.localStorage.removeItem(state.sourceMetaKey);
-  } catch (error) {
-    console.warn("Impossibile cancellare l'origine salvata", error);
-  }
-}
-
-/**
- * Carica l'origine predefinita incorporata nel codice, se presente.
- */
-async function loadEmbeddedSource() {
-  if (!EMBEDDED_SOURCE || !EMBEDDED_SOURCE.trim()) {
-    return;
-  }
-  try {
-    const rows = await parseSourceCsv(EMBEDDED_SOURCE);
-    state.sourceRows = rows;
-    state.columnMap = findColumns(rows[0]);
-    if (!state.columnMap?.sku || !state.columnMap?.parent) {
-      throw new Error("Colonne essenziali mancanti nel dataset predefinito.");
+    if (showNotification) {
+      showMessage(`Origine remota caricata (${rows.length} righe)`, "success");
     }
-    state.sourceMeta = {
-      name: EMBEDDED_SOURCE_NAME,
-      rowCount: rows.length,
-      persisted: false,
-      embedded: true
-    };
-    updateFileInfo(state.sourceMeta);
-    showMessage("Origine predefinita caricata", "success");
   } catch (error) {
-    console.warn("Impossibile caricare l'origine predefinita", error);
+    console.error(error);
+    state.sourceRows = [];
+    state.columnMap = null;
+    state.sourceMeta = null;
+    updateFileInfo(null);
+    showMessage(error.message || "Errore durante il download dell'origine remota", "error");
   }
 }
 
@@ -572,7 +526,6 @@ async function loadEmbeddedSource() {
  * Inizializza gli event listener dell'interfaccia.
  */
 function setupListeners() {
-  const fileInput = document.getElementById("csv-input");
   const reloadBtn = document.getElementById("reload-btn");
   const addBtn = document.getElementById("add-btn");
   const skuInput = document.getElementById("sku-input");
@@ -580,46 +533,8 @@ function setupListeners() {
   const clearBtn = document.getElementById("clear-btn");
   const downloadTemplateBtn = document.getElementById("download-template");
 
-  fileInput.addEventListener("change", async (event) => {
-    const [file] = event.target.files;
-    if (!file) return;
-    try {
-      const rows = await parseSourceCsv(file);
-      state.sourceRows = rows;
-      state.columnMap = findColumns(rows[0]);
-      if (!state.columnMap.sku) {
-        throw new Error("Colonna SKU non trovata. Verifica l'header del file.");
-      }
-      if (!state.columnMap.parent) {
-        throw new Error("Colonna Parent SKU non trovata. Verifica l'header del file.");
-      }
-      state.sourceMeta = {
-        name: file.name,
-        rowCount: rows.length,
-        persisted: true
-      };
-      updateFileInfo(state.sourceMeta);
-      persistSourceRows(rows, state.sourceMeta);
-      showMessage(`CSV caricato (${rows.length} righe)`, "success");
-    } catch (error) {
-      console.error(error);
-      state.sourceRows = [];
-      state.columnMap = null;
-      fileInput.value = "";
-      state.sourceMeta = null;
-      updateFileInfo(null);
-      showMessage(error.message || "Errore durante il caricamento del CSV", "error");
-    }
-  });
-
   reloadBtn.addEventListener("click", () => {
-    state.sourceRows = [];
-    state.columnMap = null;
-    fileInput.value = "";
-    state.sourceMeta = null;
-    updateFileInfo(null);
-    clearPersistedSource();
-    showMessage("Origine rimossa. Carica un nuovo CSV o usa il dataset predefinito.", "success");
+    loadRemoteSource();
   });
 
   addBtn.addEventListener("click", () => {
@@ -646,8 +561,5 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
   restoreModelRows();
   renderTable();
-  const restored = restoreSourceRows();
-  if (!restored) {
-    await loadEmbeddedSource();
-  }
+  await loadRemoteSource(false);
 });
