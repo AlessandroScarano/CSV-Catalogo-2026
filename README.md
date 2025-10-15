@@ -33,7 +33,7 @@ Di seguito trovi le istruzioni per entrambe le modalità.
 ### Preparare l'origine
 
 1. Recupera il file ufficiale `origineCat2026.csv` e copialo nella stessa cartella di `index.html` e `app.js`.
-2. All'avvio l'app leggerà questa copia locale (nessun upload manuale necessario).
+2. All'avvio l'app proverà a leggere automaticamente questa copia locale. Se il browser la blocca (ad esempio quando la pagina è aperta da `file://` o l'hosting non espone il CSV), usa il pulsante **Importa origine manualmente** per selezionare `origineCat2026.csv`: il contenuto viene salvato in cache e non dovrai ripetere l'operazione a ogni avvio.
 3. Se il file locale non è presente o non è accessibile, verrà tentato automaticamente il download dall'URL ufficiale `https://www.glasscom.it/Catalogo2026/origineCat2026.csv` (e, quando la pagina non è servita in HTTPS, anche dalla variante `http://`). Qualora il server remoto blocchi la richiesta CORS, l'app utilizza un mirror pubblico (`https://r.jina.ai`) per recuperare lo stesso file.
 4. L'ultima versione caricata viene memorizzata nel browser per avvii successivi (anche se il file o la rete non sono disponibili).
 
@@ -44,6 +44,7 @@ Di seguito trovi le istruzioni per entrambe le modalità.
    - In mancanza del file locale, l'app tenta di scaricare il CSV dall'URL ufficiale indicato sopra.
    - Se hai già aperto l'app in precedenza, la copia salvata nel browser viene ripristinata e poi aggiornata appena possibile.
    - Il pannello mostra nome, numero di righe, tipo di fonte e ultima data di aggiornamento; usa "Ricarica origine" per forzare un nuovo tentativo (locale e poi remoto).
+   - Se tutti i tentativi automatici falliscono (blocco CORS, rete assente, pagina servita da `file://`), viene mostrato il pulsante **Importa origine manualmente**: seleziona il CSV locale una volta sola e l'app lo riutilizzerà dalle sessioni successive.
 
 2. **Sezione "Cerca codice"**
    - Inserisci uno SKU padre o variante e premi "Aggiungi".
@@ -62,11 +63,12 @@ Di seguito trovi le istruzioni per entrambe le modalità.
 - Se il file locale non è accessibile, l'app tenta il download dell'origine remota passando prima da HTTPS e, quando possibile, dalla variante HTTP. Se entrambi i tentativi sono bloccati dal server (assenza di CORS), viene utilizzato automaticamente il mirror `https://r.jina.ai`, che fornisce gli header necessari.
 - Dopo il primo caricamento valido, il CSV viene memorizzato nel browser per velocizzare l'avvio successivo e gestire eventuali errori momentanei.
 - Il pulsante **"Ricarica origine"** riesegue i tentativi in ordine (locale → remoto) e aggiorna la cache se viene trovata una sorgente valida.
+- Il pulsante **"Importa origine manualmente"** resta sempre disponibile come ultima risorsa: il file scelto viene archiviato nella cache locale e indicato come "Fonte caricata manualmente" nel pannello dell'origine.
 
 ### Limitazioni note (SPA)
 
 - Vengono considerate al massimo cinque varianti per ogni SKU padre (le successive vengono ignorate con messaggio informativo).
-- L'apertura diretta da `file://` impedisce alla pagina di leggere `origineCat2026.csv`. Utilizza sempre un server statico locale (anche temporaneo) per lavorare con la copia accanto alla pagina.
+- L'apertura diretta da `file://` impedisce alla pagina di leggere `origineCat2026.csv`. Utilizza sempre un server statico locale (anche temporaneo) oppure carica il file tramite **Importa origine manualmente** (il contenuto verrà comunque salvato in cache).
 - Se servi l'applicazione in HTTPS, il fallback HTTP dell'origine remota verrà bloccato dal browser, ma il mirror `https://r.jina.ai` continuerà a funzionare perché fornisce il file tramite HTTPS.
 - Il mirror pubblico richiede comunque una connessione a Internet; in assenza di rete verrà utilizzata l'ultima copia salvata nella cache locale.
 - Se non stai usando un server statico, il file locale potrebbe non essere leggibile e il browser segnalerà l'errore "Failed to fetch".

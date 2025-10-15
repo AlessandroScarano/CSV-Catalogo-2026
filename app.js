@@ -33,6 +33,14 @@ const REMOTE_PROXY_SOURCES = [
 ];
 const SOURCE_CACHE_TEXT_KEY = "catalogo-source-cache-text";
 const SOURCE_CACHE_META_KEY = "catalogo-source-cache-meta";
+const MANUAL_SOURCE_NAME = `${SOURCE_LABEL} (manuale)`;
+const MANUAL_IMPORT_DEFAULT_MESSAGE =
+  "Se il caricamento automatico fallisce, seleziona il file locale \"origineCat2026.csv\" per continuare.";
+
+const manualImportState = {
+  pinned: false,
+  message: MANUAL_IMPORT_DEFAULT_MESSAGE
+};
 
 // Stato globale dell'applicazione
 const state = {
@@ -108,6 +116,65 @@ function showMessage(text, type = "success") {
   setTimeout(() => {
     messageBox.className = messageBox.className.replace("show", "").trim();
   }, 4000);
+}
+
+/**
+ * Aggiorna visibilità e messaggi della sezione di import manuale.
+ * @param {boolean} visible
+ * @param {string} message
+ */
+function setManualImportVisibility(visible, message) {
+  const messageEl = document.getElementById("manual-upload-message");
+  const buttonEl = document.getElementById("manual-import-btn");
+  if (buttonEl) {
+    buttonEl.hidden = !visible;
+    buttonEl.disabled = !visible;
+  }
+  if (messageEl) {
+    if (message) {
+      messageEl.textContent = message;
+    }
+    const textContent = messageEl.textContent ? messageEl.textContent.trim() : "";
+    messageEl.hidden = !visible || !textContent;
+  }
+}
+
+/**
+ * Mostra il pulsante di import manuale (opzionalmente mantenendolo sempre visibile).
+ * @param {string} [message]
+ * @param {{ sticky?: boolean }} [options]
+ */
+function showManualImport(message, options = {}) {
+  const nextMessage = message?.trim() || manualImportState.message || MANUAL_IMPORT_DEFAULT_MESSAGE;
+  manualImportState.message = nextMessage;
+  if (options.sticky) {
+    manualImportState.pinned = true;
+  }
+  setManualImportVisibility(true, nextMessage);
+}
+
+/**
+ * Nasconde l'import manuale se non è stato fissato come necessario.
+ * @param {{ force?: boolean }} [options]
+ */
+function hideManualImport(options = {}) {
+  if (!options.force && manualImportState.pinned) {
+    setManualImportVisibility(true, manualImportState.message || MANUAL_IMPORT_DEFAULT_MESSAGE);
+    return;
+  }
+  manualImportState.pinned = false;
+  manualImportState.message = MANUAL_IMPORT_DEFAULT_MESSAGE;
+  setManualImportVisibility(false, MANUAL_IMPORT_DEFAULT_MESSAGE);
+}
+
+/**
+ * Ripulisce l'input file per consentire successive selezioni dello stesso file.
+ */
+function clearManualImportInput() {
+  const input = document.getElementById("manual-file-input");
+  if (input) {
+    input.value = "";
+  }
 }
 
 /**
@@ -568,6 +635,9 @@ function updateFileInfo(meta) {
       case "remote-http":
         details.push("Fonte remota (HTTP)");
         break;
+      case "manual":
+        details.push("Fonte caricata manualmente");
+        break;
       case "remote-proxy-http":
         details.push("Fonte remota (mirror HTTP)");
         break;
@@ -643,6 +713,54 @@ async function fetchSourceText(url, options = {}) {
 }
 
 /**
+ * Importa manualmente un file CSV selezionato dall'utente.
+ * @param {File} file
+ * @returns {Promise<boolean>}
+ */
+async function importManualSource(file) {
+  if (!file) {
+    return false;
+  }
+  try {
+    const rows = await parseSourceCsv(file);
+    const columnMap = findColumns(rows[0]);
+    if (!columnMap?.sku || !columnMap?.parent) {
+      throw new Error("Colonne essenziali mancanti nel file selezionato.");
+    }
+    const text = await file.text();
+    const timestamp = Date.now();
+    persistSourceCache(text, {
+      rowCount: rows.length,
+      name: MANUAL_SOURCE_NAME,
+      url: file.name,
+      sourceType: "manual",
+      timestamp
+    });
+    applySource(rows, columnMap, {
+      name: MANUAL_SOURCE_NAME,
+      rowCount: rows.length,
+      url: file.name,
+      cachedAt: timestamp,
+      stale: false,
+      sourceType: "manual"
+    });
+    showManualImport(
+      "Origine caricata manualmente. Seleziona un nuovo file per sostituirla in futuro.",
+      { sticky: true }
+    );
+    showMessage(`Origine caricata manualmente (${rows.length} righe)`, "success");
+    return true;
+  } catch (error) {
+    console.error("Import manuale non riuscito", error);
+    showManualImport(null, { sticky: true });
+    showMessage(error.message || "Impossibile importare il file selezionato", "error");
+    return false;
+  } finally {
+    clearManualImportInput();
+  }
+}
+
+/**
  * Produce un messaggio leggibile per gli errori durante il caricamento dell'origine.
  * @param {{sourceType: string}} attempt
  * @param {Error} error
@@ -707,6 +825,7 @@ async function loadSource(showNotification = true) {
   if (reloadBtn) {
     reloadBtn.disabled = true;
   }
+  hideManualImport();
   try {
     const attempts = [];
     try {
@@ -779,6 +898,7 @@ async function loadSource(showNotification = true) {
           stale: false,
           sourceType: attempt.sourceType
         });
+        hideManualImport();
         if (showNotification) {
           let successLabel = "Origine caricata";
           switch (attempt.sourceType) {
@@ -818,6 +938,10 @@ async function loadSource(showNotification = true) {
         stale: true,
         sourceType: cached.meta?.sourceType ?? "cache"
       });
+      showManualImport(
+        "Impossibile aggiornare automaticamente l'origine. Seleziona manualmente un file locale aggiornato se disponibile.",
+        { sticky: true }
+      );
       const details = errors
         .map(({ attempt, message }) => {
           const label =
@@ -844,6 +968,10 @@ async function loadSource(showNotification = true) {
     state.columnMap = null;
     state.sourceMeta = null;
     updateFileInfo(null);
+    showManualImport(
+      "Origine non disponibile. Se possiedi il file locale \"origineCat2026.csv\" selezionalo manualmente per continuare.",
+      { sticky: true }
+    );
     const details = errors
       .map(({ attempt, message }) => {
         const label =
@@ -872,6 +1000,7 @@ async function loadSource(showNotification = true) {
   } catch (error) {
     console.error(error);
     showMessage(error.message || "Errore imprevisto durante il caricamento dell'origine", "error");
+    showManualImport(null, { sticky: true });
     return false;
   } finally {
     if (reloadBtn) {
@@ -890,10 +1019,25 @@ function setupListeners() {
   const exportBtn = document.getElementById("export-btn");
   const clearBtn = document.getElementById("clear-btn");
   const downloadTemplateBtn = document.getElementById("download-template");
+  const manualBtn = document.getElementById("manual-import-btn");
+  const manualInput = document.getElementById("manual-file-input");
 
   reloadBtn.addEventListener("click", () => {
     loadSource();
   });
+
+  if (manualBtn && manualInput) {
+    manualBtn.addEventListener("click", () => {
+      manualInput.click();
+    });
+    manualInput.addEventListener("change", async (event) => {
+      const target = event.target;
+      const file = target && target.files && target.files[0];
+      if (file) {
+        await importManualSource(file);
+      }
+    });
+  }
 
   addBtn.addEventListener("click", () => {
     addByCode(skuInput.value);
@@ -919,6 +1063,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   const fileWarning = document.getElementById("file-protocol-warning");
   if (fileWarning && window.location.protocol === "file:") {
     fileWarning.hidden = false;
+    showManualImport(
+      "La pagina è aperta tramite file://. Seleziona manualmente il file locale \"origineCat2026.csv\" per caricare l'origine.",
+      { sticky: true }
+    );
   }
   setupListeners();
   restoreModelRows();

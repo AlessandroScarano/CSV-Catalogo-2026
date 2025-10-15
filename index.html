@@ -49,8 +49,11 @@
           <span id="row-count" class="badge">0 righe</span>
           <span id="file-meta" class="file-meta" hidden></span>
         </div>
+        <p id="manual-upload-message" class="hint" hidden></p>
         <div class="actions">
           <button id="reload-btn" type="button" class="secondary" aria-label="Ricarica l'origine remota" disabled>Ricarica origine</button>
+          <button id="manual-import-btn" type="button" class="ghost" aria-label="Importa origine manualmente" hidden>Importa origine manualmente</button>
+          <input id="manual-file-input" type="file" accept=".csv" hidden aria-hidden="true" />
         </div>
       </div>
     </section>
