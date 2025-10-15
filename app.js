@@ -3,8 +3,10 @@
 const SOURCE_LABEL = "Origine Catalogo 2026";
 const LOCAL_SOURCE_URL = "origineCat2026.csv";
 const LOCAL_SOURCE_NAME = `${SOURCE_LABEL} (locale)`;
-const REMOTE_SOURCE_URL = "https://www.glasscom.it/Catalogo2026/origineCat2026.csv";
-const REMOTE_SOURCE_NAME = `${SOURCE_LABEL} (remota)`;
+const REMOTE_HTTPS_SOURCE_URL = "https://www.glasscom.it/Catalogo2026/origineCat2026.csv";
+const REMOTE_HTTPS_SOURCE_NAME = `${SOURCE_LABEL} (remota HTTPS)`;
+const REMOTE_HTTP_SOURCE_URL = "http://www.glasscom.it/Catalogo2026/origineCat2026.csv";
+const REMOTE_HTTP_SOURCE_NAME = `${SOURCE_LABEL} (remota HTTP)`;
 const SOURCE_CACHE_TEXT_KEY = "catalogo-source-cache-text";
 const SOURCE_CACHE_META_KEY = "catalogo-source-cache-meta";
 
@@ -532,10 +534,24 @@ function updateFileInfo(meta) {
     }
     countEl.textContent = `${meta.rowCount} righe`;
     const details = [];
-    if (meta.sourceType === "local") {
-      details.push("Fonte locale");
-    } else if (meta.sourceType === "remote") {
-      details.push("Fonte remota");
+    switch (meta.sourceType) {
+      case "local":
+        details.push("Fonte locale");
+        break;
+      case "remote-https":
+        details.push("Fonte remota (HTTPS)");
+        break;
+      case "remote-http":
+        details.push("Fonte remota (HTTP)");
+        break;
+      case "cache":
+        details.push("Fonte ripristinata dalla cache");
+        break;
+      default:
+        if (meta.sourceType) {
+          details.push(meta.sourceType);
+        }
+        break;
     }
     if (meta.cachedAt) {
       details.push(`Ultimo aggiornamento: ${formatTimestamp(meta.cachedAt)}`);
@@ -597,6 +613,46 @@ async function fetchSourceText(url, options = {}) {
 }
 
 /**
+ * Produce un messaggio leggibile per gli errori durante il caricamento dell'origine.
+ * @param {{sourceType: string}} attempt
+ * @param {Error} error
+ * @param {{isFileProtocol?: boolean, isHttpsPage?: boolean}} context
+ * @returns {string}
+ */
+function describeSourceError(attempt, error, context = {}) {
+  const baseMessage = (error && error.message) || String(error) || "Errore sconosciuto";
+  const hints = [];
+  const normalizedBase = baseMessage.trim();
+  const failedToFetch = /failed to fetch/i.test(normalizedBase);
+
+  if (attempt.sourceType === "local") {
+    if (context.isFileProtocol && failedToFetch) {
+      hints.push(
+        "Accesso al file locale bloccato dal browser (protocollo file://). Avvia un server statico nella cartella del progetto."
+      );
+    }
+    if (/\(404\)/.test(normalizedBase)) {
+      hints.push("File locale non trovato accanto alla pagina.");
+    }
+  }
+
+  if (attempt.sourceType === "remote-http" && context.isHttpsPage && failedToFetch) {
+    hints.push("Richiesta HTTP bloccata perché la pagina è servita tramite HTTPS (contenuto misto).");
+  }
+
+  if (attempt.sourceType?.startsWith("remote") && failedToFetch && hints.length === 0) {
+    hints.push("Download remoto non riuscito (controlla la connessione o i permessi CORS della sorgente).");
+  }
+
+  if (!hints.length) {
+    return normalizedBase;
+  }
+
+  const uniqueHints = Array.from(new Set(hints));
+  return `${uniqueHints.join(" ")} (Dettagli: ${normalizedBase}).`;
+}
+
+/**
  * Carica la sorgente preferendo il file locale e, in alternativa, la copia remota.
  * Salva sempre l'ultima versione funzionante nella cache locale.
  * @param {boolean} showNotification
@@ -605,6 +661,9 @@ async function loadSource(showNotification = true) {
   const nameEl = document.getElementById("file-name");
   const countEl = document.getElementById("row-count");
   const reloadBtn = document.getElementById("reload-btn");
+  const { protocol, href } = window.location;
+  const isFileProtocol = protocol === "file:";
+  const isHttpsPage = protocol === "https:";
   if (nameEl) {
     nameEl.textContent = "Caricamento origine...";
   }
@@ -615,27 +674,47 @@ async function loadSource(showNotification = true) {
     reloadBtn.disabled = true;
   }
   try {
-    const attempts = [
-      {
-        url: LOCAL_SOURCE_URL,
+    const attempts = [];
+    try {
+      const absoluteLocalUrl = new URL(LOCAL_SOURCE_URL, href).href;
+      attempts.push({
+        url: absoluteLocalUrl,
+        displayUrl: LOCAL_SOURCE_URL,
         name: LOCAL_SOURCE_NAME,
         sourceType: "local",
         fetchOptions: {
-          cache: "no-cache",
-          credentials: "same-origin"
+          cache: "no-store"
         }
-      },
-      {
-        url: REMOTE_SOURCE_URL,
-        name: REMOTE_SOURCE_NAME,
-        sourceType: "remote",
+      });
+    } catch (error) {
+      console.warn("Impossibile costruire l'URL assoluto per la sorgente locale", error);
+    }
+
+    attempts.push({
+      url: REMOTE_HTTPS_SOURCE_URL,
+      displayUrl: REMOTE_HTTPS_SOURCE_URL,
+      name: REMOTE_HTTPS_SOURCE_NAME,
+      sourceType: "remote-https",
+      fetchOptions: {
+        cache: "no-cache",
+        mode: "cors",
+        credentials: "omit"
+      }
+    });
+
+    if (!isHttpsPage) {
+      attempts.push({
+        url: REMOTE_HTTP_SOURCE_URL,
+        displayUrl: REMOTE_HTTP_SOURCE_URL,
+        name: REMOTE_HTTP_SOURCE_NAME,
+        sourceType: "remote-http",
         fetchOptions: {
           cache: "no-cache",
           mode: "cors",
           credentials: "omit"
         }
-      }
-    ];
+      });
+    }
 
     const errors = [];
     for (const attempt of attempts) {
@@ -650,26 +729,32 @@ async function loadSource(showNotification = true) {
         persistSourceCache(text, {
           rowCount: rows.length,
           name: attempt.name,
-          url: attempt.url,
+          url: attempt.displayUrl ?? attempt.url,
           sourceType: attempt.sourceType,
           timestamp
         });
         applySource(rows, columnMap, {
           name: attempt.name,
           rowCount: rows.length,
-          url: attempt.url,
+          url: attempt.displayUrl ?? attempt.url,
           cachedAt: timestamp,
           stale: false,
           sourceType: attempt.sourceType
         });
         if (showNotification) {
           const successLabel =
-            attempt.sourceType === "local" ? "Origine locale caricata" : "Origine remota caricata";
+            attempt.sourceType === "local"
+              ? "Origine locale caricata"
+              : attempt.sourceType === "remote-http"
+                ? "Origine remota HTTP caricata"
+                : "Origine remota HTTPS caricata";
           showMessage(`${successLabel} (${rows.length} righe)`, "success");
         }
         return true;
       } catch (error) {
-        errors.push({ attempt, error });
+        const friendlyMessage = describeSourceError(attempt, error, { isFileProtocol, isHttpsPage });
+        console.warn(`Impossibile caricare ${attempt.name} (${attempt.url})`, error);
+        errors.push({ attempt, error, message: friendlyMessage });
       }
     }
 
@@ -681,10 +766,18 @@ async function loadSource(showNotification = true) {
         url: cached.meta?.url,
         cachedAt: cached.meta?.timestamp,
         stale: true,
-        sourceType: cached.meta?.sourceType
+        sourceType: cached.meta?.sourceType ?? "cache"
       });
       const details = errors
-        .map(({ attempt, error }) => `${attempt.sourceType === "local" ? "locale" : "remota"}: ${error?.message || error}`)
+        .map(({ attempt, message }) => {
+          const label =
+            attempt.sourceType === "local"
+              ? "locale"
+              : attempt.sourceType === "remote-http"
+                ? "remota HTTP"
+                : "remota HTTPS";
+          return `${label}: ${message}`;
+        })
         .join(" | ");
       const fallbackMessage = details
         ? `Impossibile aggiornare l'origine (${details}). È stata utilizzata l'ultima copia salvata.`
@@ -698,12 +791,24 @@ async function loadSource(showNotification = true) {
     state.sourceMeta = null;
     updateFileInfo(null);
     const details = errors
-      .map(({ attempt, error }) => `${attempt.sourceType === "local" ? "locale" : "remota"}: ${error?.message || error}`)
+      .map(({ attempt, message }) => {
+        const label =
+          attempt.sourceType === "local"
+            ? "locale"
+            : attempt.sourceType === "remote-http"
+              ? "remota HTTP"
+              : "remota HTTPS";
+        return `${label}: ${message}`;
+      })
       .join(" | ");
     const message = details
       ? `Origine non disponibile: ${details}. Verifica di aver posizionato il file locale o la connessione alla sorgente remota.`
       : "Origine non disponibile. Controlla la presenza del file locale o la connessione.";
-    showMessage(message, "error");
+    const hint =
+      isFileProtocol && errors.some(({ attempt }) => attempt.sourceType === "local")
+        ? " Nota: i browser bloccano l'accesso diretto ai file locali. Avvia un piccolo server statico o utilizza l'origine remota."
+        : "";
+    showMessage(message + hint, "error");
     return false;
   } catch (error) {
     console.error(error);
@@ -763,7 +868,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       url: cached.meta?.url,
       cachedAt: cached.meta?.timestamp,
       stale: true,
-      sourceType: cached.meta?.sourceType
+      sourceType: cached.meta?.sourceType ?? "cache"
     });
     showMessage(
       "Origine ripristinata dall'ultima copia salvata. Ricerca di aggiornamenti (file locale/remoto) in corso...",

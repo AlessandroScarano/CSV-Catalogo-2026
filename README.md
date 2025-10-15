@@ -23,7 +23,7 @@ Questa applicazione è una Single Page Application completamente client-side che
 
 1. Recupera il file ufficiale `origineCat2026.csv` e copialo nella stessa cartella di `index.html` e `app.js`.
 2. All'avvio l'app leggerà questa copia locale (nessun upload manuale necessario).
-3. Se il file locale non è presente o non è accessibile, verrà tentato automaticamente il download dall'URL ufficiale `https://www.glasscom.it/Catalogo2026/origineCat2026.csv`.
+3. Se il file locale non è presente o non è accessibile, verrà tentato automaticamente il download dall'URL ufficiale `https://www.glasscom.it/Catalogo2026/origineCat2026.csv` (e, quando la pagina non è servita in HTTPS, anche dalla variante `http://`).
 4. L'ultima versione caricata viene memorizzata nel browser per avvii successivi (anche se il file o la rete non sono disponibili).
 
 ## Come testare le funzionalità
@@ -48,14 +48,15 @@ Questa applicazione è una Single Page Application completamente client-side che
 ## Origine locale e remota
 
 - Il file locale ha priorità: se presente, viene sempre utilizzato e puoi aggiornarlo semplicemente sostituendo il CSV nella cartella.
-- Se il file locale non è accessibile, l'app tenta il download dell'origine remota (potrebbero servire i permessi CORS del server di origine).
+- Se il file locale non è accessibile, l'app tenta il download dell'origine remota passando prima da HTTPS e, quando possibile, dalla variante HTTP (può fallire se il server non espone gli header CORS necessari o se il browser blocca contenuti misti).
 - Dopo il primo caricamento valido, il CSV viene memorizzato nel browser per velocizzare l'avvio successivo e gestire eventuali errori momentanei.
 - Il pulsante **"Ricarica origine"** riesegue i tentativi in ordine (locale → remoto) e aggiorna la cache se viene trovata una sorgente valida.
 
 ## Limitazioni note
 
 - Vengono considerate al massimo cinque varianti per ogni SKU padre (le successive vengono ignorate con messaggio informativo).
-- Alcuni browser potrebbero bloccare l'accesso ai file locali se la pagina non è servita tramite HTTP.
+- Alcuni browser bloccano l'accesso diretto ai file locali quando la pagina è aperta da `file://`: avvia un piccolo server statico per permettere la lettura di `origineCat2026.csv`.
+- Se servi l'applicazione in HTTPS, il fallback HTTP dell'origine remota verrà bloccato dal browser: assicurati di avere la copia locale oppure abilita una sorgente remota con HTTPS valido.
 - Se non stai usando un server statico, il file locale potrebbe non essere leggibile e il browser segnalerà l'errore "Failed to fetch".
 - Se appare il messaggio "Libreria Papa Parse non disponibile", controlla la connessione internet o eventuali blocchi verso le CDN utilizzate (jsDelivr).
 - Le colonne del CSV vengono rilevate con nomi tolleranti, ma intestazioni completamente assenti o molto atipiche potrebbero richiedere un adattamento manuale del file sorgente.
