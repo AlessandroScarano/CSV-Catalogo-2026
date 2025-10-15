@@ -6,18 +6,22 @@ Questa applicazione è una Single Page Application completamente client-side che
 
 1. **Clona o scarica** il progetto in una cartella locale.
 2. Apri un terminale nella cartella del progetto.
-3. Avvia un piccolo server statico (consigliato per evitare restrizioni dei browser sui file locali). Ad esempio:
-   - Con Python 3:
+3. Avvia un piccolo server statico. È indispensabile: i browser, quando la pagina è aperta da `file://`, bloccano il caricamento automatico di `origineCat2026.csv`.
+   - Con Python 3 (disponibile su macOS, Linux e Windows):
      ```bash
      python -m http.server 8000
      ```
-   - Oppure con Node.js (se installato):
+   - Con PowerShell su Windows:
+     ```powershell
+     py -m http.server 8000
+     ```
+   - Con Node.js (se installato):
      ```bash
      npx serve .
      ```
 4. Apri il browser all'indirizzo [http://localhost:8000](http://localhost:8000) (sostituisci la porta se diversa) e vedrai l'interfaccia dell'applicazione.
 
-> In alternativa puoi aprire direttamente `index.html` con il browser, ma alcuni browser limitano l'accesso ai file locali: usa comunque un server statico per consentire alla pagina di leggere `origineCat2026.csv` e, se necessario, scaricare la copia remota.
+> L'apertura diretta di `index.html` dal file system mostrerà un avviso e l'origine non verrà caricata: è un comportamento previsto dei browser moderni per motivi di sicurezza.
 
 ## Preparare l'origine
 
@@ -55,7 +59,7 @@ Questa applicazione è una Single Page Application completamente client-side che
 ## Limitazioni note
 
 - Vengono considerate al massimo cinque varianti per ogni SKU padre (le successive vengono ignorate con messaggio informativo).
-- Alcuni browser bloccano l'accesso diretto ai file locali quando la pagina è aperta da `file://`: avvia un piccolo server statico per permettere la lettura di `origineCat2026.csv`.
+- L'apertura diretta da `file://` impedisce alla pagina di leggere `origineCat2026.csv`. Utilizza sempre un server statico locale (anche temporaneo) per lavorare con la copia accanto alla pagina.
 - Se servi l'applicazione in HTTPS, il fallback HTTP dell'origine remota verrà bloccato dal browser: assicurati di avere la copia locale oppure abilita una sorgente remota con HTTPS valido.
 - Se non stai usando un server statico, il file locale potrebbe non essere leggibile e il browser segnalerà l'errore "Failed to fetch".
 - Se appare il messaggio "Libreria Papa Parse non disponibile", controlla la connessione internet o eventuali blocchi verso le CDN utilizzate (jsDelivr).

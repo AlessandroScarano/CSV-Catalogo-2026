@@ -806,7 +806,8 @@ async function loadSource(showNotification = true) {
       : "Origine non disponibile. Controlla la presenza del file locale o la connessione.";
     const hint =
       isFileProtocol && errors.some(({ attempt }) => attempt.sourceType === "local")
-        ? " Nota: i browser bloccano l'accesso diretto ai file locali. Avvia un piccolo server statico o utilizza l'origine remota."
+        ?
+            " Per permettere all'app di leggere il CSV locale avvia un server statico nella cartella del progetto (es. python -m http.server 8000) e apri la pagina da http://localhost:8000."
         : "";
     showMessage(message + hint, "error");
     return false;
@@ -857,6 +858,10 @@ function setupListeners() {
 // Bootstrap dell'applicazione
 window.addEventListener("DOMContentLoaded", async () => {
   updateFileInfo(null);
+  const fileWarning = document.getElementById("file-protocol-warning");
+  if (fileWarning && window.location.protocol === "file:") {
+    fileWarning.hidden = false;
+  }
   setupListeners();
   restoreModelRows();
   renderTable();
