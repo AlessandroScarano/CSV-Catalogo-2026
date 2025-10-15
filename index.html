@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catalogo CSV 2026</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" integrity="sha256-32IOyDDDeWGPAHDq6LaH+xr3aMcMBXNIN1qNbfXDn5I=" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js" integrity="sha256-6g9hbSAVnX1nvUs61f7o+Jfm6D/Ejko116IhVQ1KCMk=" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>Catalogo CSV 2026</h1>
+    <p class="subtitle">Trasforma gruppi padre/varianti in un modello unico pronto all'esportazione.</p>
+  </header>
+
+  <main>
+    <section class="readme" aria-labelledby="readme-heading">
+      <h2 id="readme-heading">Guida rapida</h2>
+      <ul>
+        <li>Carica un CSV UTF-8 con separatore <code>;</code> contenente SKU padre e varianti.</li>
+        <li>Inserisci uno SKU padre o variante per aggiungere il gruppo all'anteprima.</li>
+        <li>Massimo 5 varianti per riga del modello finale; le eccedenze vengono ignorate.</li>
+        <li>Esporta il modello finale in qualsiasi momento oppure svuota l'anteprima.</li>
+        <li>Le righe aggiunte rimangono salvate nel browser finché non le rimuovi.</li>
+      </ul>
+    </section>
+
+    <section class="panel" aria-labelledby="upload-heading">
+      <div class="panel-header">
+        <h2 id="upload-heading">1. Carica CSV di origine</h2>
+      </div>
+      <div class="panel-body">
+        <label for="csv-input" class="sr-only">Carica file CSV</label>
+        <input type="file" id="csv-input" accept=".csv" />
+        <div class="file-info" aria-live="polite">
+          <span id="file-name">Nessun file caricato</span>
+          <span id="row-count" class="badge">0 righe</span>
+        </div>
+        <div class="actions">
+          <button id="reload-btn" type="button" class="secondary" aria-label="Rimuovi o ricarica file" disabled>Rimuovi / Ricarica</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="search-heading">
+      <div class="panel-header">
+        <h2 id="search-heading">2. Cerca codice</h2>
+      </div>
+      <div class="panel-body search">
+        <label for="sku-input" class="sr-only">Inserisci codice SKU</label>
+        <input type="text" id="sku-input" placeholder="Inserisci codice (SKU padre o variante)" autocomplete="off" />
+        <button id="add-btn" type="button" class="primary" aria-label="Aggiungi codice">Aggiungi</button>
+      </div>
+      <p class="hint">Suggerimento: premi Invio per aggiungere rapidamente.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="preview-heading">
+      <div class="panel-header">
+        <h2 id="preview-heading">3. Anteprima modello finale</h2>
+        <span id="preview-count" class="badge">0 righe</span>
+      </div>
+      <div class="panel-body table-wrapper" tabindex="0">
+        <table id="preview-table" aria-describedby="preview-heading">
+          <thead>
+            <tr id="preview-header"></tr>
+          </thead>
+          <tbody id="preview-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="actions-heading">
+      <div class="panel-header">
+        <h2 id="actions-heading">4. Azioni</h2>
+      </div>
+      <div class="panel-body actions">
+        <button id="export-btn" type="button" class="primary" aria-label="Esporta CSV">Esporta CSV</button>
+        <button id="clear-btn" type="button" class="secondary" aria-label="Svuota anteprima">Svuota anteprima</button>
+        <button id="download-template" type="button" class="ghost" aria-label="Scarica modello vuoto">Scarica modello vuoto</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="message" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
