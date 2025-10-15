@@ -1,7 +1,10 @@
 /* global Papa, saveAs */
 
+const SOURCE_LABEL = "Origine Catalogo 2026";
+const LOCAL_SOURCE_URL = "origineCat2026.csv";
+const LOCAL_SOURCE_NAME = `${SOURCE_LABEL} (locale)`;
 const REMOTE_SOURCE_URL = "https://www.glasscom.it/Catalogo2026/origineCat2026.csv";
-const REMOTE_SOURCE_NAME = "Origine Catalogo 2026";
+const REMOTE_SOURCE_NAME = `${SOURCE_LABEL} (remota)`;
 const SOURCE_CACHE_TEXT_KEY = "catalogo-source-cache-text";
 const SOURCE_CACHE_META_KEY = "catalogo-source-cache-meta";
 
@@ -86,15 +89,16 @@ function showMessage(text, type = "success") {
  * @param {string} text
  * @param {number} rowCount
  */
-function persistSourceCache(text, rowCount) {
+function persistSourceCache(text, meta = {}) {
   try {
     const storage = window.localStorage;
     if (!storage) return;
     storage.setItem(SOURCE_CACHE_TEXT_KEY, text);
-    storage.setItem(
-      SOURCE_CACHE_META_KEY,
-      JSON.stringify({ rowCount, timestamp: Date.now() })
-    );
+    const payload = { ...meta };
+    if (!payload.timestamp) {
+      payload.timestamp = Date.now();
+    }
+    storage.setItem(SOURCE_CACHE_META_KEY, JSON.stringify(payload));
   } catch (error) {
     console.warn("Impossibile salvare la cache dell'origine", error);
   }
@@ -116,6 +120,9 @@ async function getCachedSource() {
     if (!rows.length) return null;
     const columnMap = findColumns(rows[0]);
     if (!columnMap?.sku || !columnMap?.parent) return null;
+    if (!meta.rowCount) {
+      meta.rowCount = rows.length;
+    }
     return {
       rows,
       columnMap,
@@ -516,9 +523,20 @@ function updateFileInfo(meta) {
   const metaEl = document.getElementById("file-meta");
   if (!nameEl || !countEl || !metaEl) return;
   if (meta) {
-    nameEl.textContent = `${meta.name}${meta.url ? ` (${meta.url})` : ""}`;
+    const baseName = meta.name || SOURCE_LABEL;
+    nameEl.textContent = baseName + (meta.url ? ` (${meta.url})` : "");
+    if (meta.url) {
+      nameEl.setAttribute("title", meta.url);
+    } else {
+      nameEl.removeAttribute("title");
+    }
     countEl.textContent = `${meta.rowCount} righe`;
     const details = [];
+    if (meta.sourceType === "local") {
+      details.push("Fonte locale");
+    } else if (meta.sourceType === "remote") {
+      details.push("Fonte remota");
+    }
     if (meta.cachedAt) {
       details.push(`Ultimo aggiornamento: ${formatTimestamp(meta.cachedAt)}`);
     }
@@ -532,6 +550,7 @@ function updateFileInfo(meta) {
     countEl.textContent = "0 righe";
     metaEl.textContent = "";
     metaEl.hidden = true;
+    nameEl.removeAttribute("title");
   }
 }
 
@@ -564,11 +583,25 @@ function restoreModelRows() {
 }
 
 /**
- * Salva la sorgente del CSV in localStorage.
- * @param {object[]} rows
- * @param {{name: string, rowCount: number, persisted?: boolean}} meta
+ * Scarica il contenuto di un CSV da un URL specifico.
+ * @param {string} url
+ * @param {RequestInit} options
+ * @returns {Promise<string>}
  */
-async function loadRemoteSource(showNotification = true) {
+async function fetchSourceText(url, options = {}) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    throw new Error(`Richiesta fallita (${response.status})`);
+  }
+  return response.text();
+}
+
+/**
+ * Carica la sorgente preferendo il file locale e, in alternativa, la copia remota.
+ * Salva sempre l'ultima versione funzionante nella cache locale.
+ * @param {boolean} showNotification
+ */
+async function loadSource(showNotification = true) {
   const nameEl = document.getElementById("file-name");
   const countEl = document.getElementById("row-count");
   const reloadBtn = document.getElementById("reload-btn");
@@ -582,56 +615,100 @@ async function loadRemoteSource(showNotification = true) {
     reloadBtn.disabled = true;
   }
   try {
-    const response = await fetch(REMOTE_SOURCE_URL, {
-      cache: "no-cache",
-      mode: "cors",
-      credentials: "omit"
-    });
-    if (!response.ok) {
-      throw new Error(`Impossibile scaricare l'origine remota (${response.status})`);
+    const attempts = [
+      {
+        url: LOCAL_SOURCE_URL,
+        name: LOCAL_SOURCE_NAME,
+        sourceType: "local",
+        fetchOptions: {
+          cache: "no-cache",
+          credentials: "same-origin"
+        }
+      },
+      {
+        url: REMOTE_SOURCE_URL,
+        name: REMOTE_SOURCE_NAME,
+        sourceType: "remote",
+        fetchOptions: {
+          cache: "no-cache",
+          mode: "cors",
+          credentials: "omit"
+        }
+      }
+    ];
+
+    const errors = [];
+    for (const attempt of attempts) {
+      try {
+        const text = await fetchSourceText(attempt.url, attempt.fetchOptions);
+        const rows = await parseSourceCsv(text);
+        const columnMap = findColumns(rows[0]);
+        if (!columnMap?.sku || !columnMap?.parent) {
+          throw new Error("Colonne essenziali mancanti nella sorgente.");
+        }
+        const timestamp = Date.now();
+        persistSourceCache(text, {
+          rowCount: rows.length,
+          name: attempt.name,
+          url: attempt.url,
+          sourceType: attempt.sourceType,
+          timestamp
+        });
+        applySource(rows, columnMap, {
+          name: attempt.name,
+          rowCount: rows.length,
+          url: attempt.url,
+          cachedAt: timestamp,
+          stale: false,
+          sourceType: attempt.sourceType
+        });
+        if (showNotification) {
+          const successLabel =
+            attempt.sourceType === "local" ? "Origine locale caricata" : "Origine remota caricata";
+          showMessage(`${successLabel} (${rows.length} righe)`, "success");
+        }
+        return true;
+      } catch (error) {
+        errors.push({ attempt, error });
+      }
     }
-    const text = await response.text();
-    const rows = await parseSourceCsv(text);
-    const columnMap = findColumns(rows[0]);
-    if (!columnMap?.sku || !columnMap?.parent) {
-      throw new Error("Colonne essenziali mancanti nell'origine remota.");
-    }
-    persistSourceCache(text, rows.length);
-    applySource(rows, columnMap, {
-      name: REMOTE_SOURCE_NAME,
-      rowCount: rows.length,
-      url: REMOTE_SOURCE_URL,
-      cachedAt: Date.now(),
-      stale: false
-    });
-    if (showNotification) {
-      showMessage(`Origine remota caricata (${rows.length} righe)`, "success");
-    }
-  } catch (error) {
-    console.error(error);
+
     const cached = await getCachedSource();
     if (cached) {
       applySource(cached.rows, cached.columnMap, {
-        name: REMOTE_SOURCE_NAME,
+        name: cached.meta?.name ?? SOURCE_LABEL,
         rowCount: cached.rows.length,
-        url: REMOTE_SOURCE_URL,
+        url: cached.meta?.url,
         cachedAt: cached.meta?.timestamp,
-        stale: true
+        stale: true,
+        sourceType: cached.meta?.sourceType
       });
-      const message = error.message
-        ? `Impossibile aggiornare l'origine remota: ${error.message}. È stata utilizzata l'ultima copia salvata.`
-        : "Impossibile aggiornare l'origine remota. È stata utilizzata l'ultima copia salvata.";
-      showMessage(message, "warning");
-    } else {
-      state.sourceRows = [];
-      state.columnMap = null;
-      state.sourceMeta = null;
-      updateFileInfo(null);
-      const message = error.message
-        ? `Origine non disponibile: ${error.message}`
-        : "Origine non disponibile. Controlla la connessione e riprova.";
-      showMessage(message, "error");
+      const details = errors
+        .map(({ attempt, error }) => `${attempt.sourceType === "local" ? "locale" : "remota"}: ${error?.message || error}`)
+        .join(" | ");
+      const fallbackMessage = details
+        ? `Impossibile aggiornare l'origine (${details}). È stata utilizzata l'ultima copia salvata.`
+        : "Impossibile aggiornare l'origine. È stata utilizzata l'ultima copia salvata.";
+      showMessage(fallbackMessage, "warning");
+      return false;
     }
+
+    state.sourceRows = [];
+    state.columnMap = null;
+    state.sourceMeta = null;
+    updateFileInfo(null);
+    const details = errors
+      .map(({ attempt, error }) => `${attempt.sourceType === "local" ? "locale" : "remota"}: ${error?.message || error}`)
+      .join(" | ");
+    const message = details
+      ? `Origine non disponibile: ${details}. Verifica di aver posizionato il file locale o la connessione alla sorgente remota.`
+      : "Origine non disponibile. Controlla la presenza del file locale o la connessione.";
+    showMessage(message, "error");
+    return false;
+  } catch (error) {
+    console.error(error);
+    showMessage(error.message || "Errore imprevisto durante il caricamento dell'origine", "error");
+    return false;
   } finally {
     if (reloadBtn) {
       reloadBtn.disabled = false;
@@ -651,7 +728,7 @@ function setupListeners() {
   const downloadTemplateBtn = document.getElementById("download-template");
 
   reloadBtn.addEventListener("click", () => {
-    loadRemoteSource();
+    loadSource();
   });
 
   addBtn.addEventListener("click", () => {
@@ -681,13 +758,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   const cached = await getCachedSource();
   if (cached) {
     applySource(cached.rows, cached.columnMap, {
-      name: REMOTE_SOURCE_NAME,
+      name: cached.meta?.name ?? SOURCE_LABEL,
       rowCount: cached.rows.length,
-      url: REMOTE_SOURCE_URL,
+      url: cached.meta?.url,
       cachedAt: cached.meta?.timestamp,
-      stale: true
+      stale: true,
+      sourceType: cached.meta?.sourceType
     });
-    showMessage("Origine ripristinata dall'ultima copia salvata. Aggiornamento in corso...", "warning");
+    showMessage(
+      "Origine ripristinata dall'ultima copia salvata. Ricerca di aggiornamenti (file locale/remoto) in corso...",
+      "warning"
+    );
   }
-  await loadRemoteSource(!cached);
+  await loadSource(!cached);
 });
