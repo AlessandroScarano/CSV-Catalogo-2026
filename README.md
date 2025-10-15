@@ -22,8 +22,9 @@ Questa applicazione è una Single Page Application completamente client-side che
 ## Come testare le funzionalità
 
 1. **Sezione "Carica CSV di origine"**
-   - Premi "Seleziona file" e scegli un CSV con separatore `;` e intestazioni.
-   - Dopo il caricamento vengono mostrati nome file e numero di righe.
+   - All'avvio viene caricata automaticamente un'origine di esempio incorporata: puoi usarla subito per fare delle prove.
+   - Premi "Seleziona file" e scegli un CSV con separatore `;` e intestazioni per sostituire l'origine.
+   - Dopo il caricamento vengono mostrati nome file e numero di righe e la sorgente viene salvata nel browser (localStorage).
 
 2. **Sezione "Cerca codice"**
    - Inserisci uno SKU padre o variante e premi "Aggiungi".
@@ -51,10 +52,17 @@ VAR003;MAIN002;Titolo Variante 3;Categoria Y;1200,75;Finitura Nera;Piccolo;No;Le
 
 Carica il file, inserisci ad esempio `MAIN001` o `VAR002` e verifica che venga generata la riga in anteprima.
 
+## Origine persistente e reset
+
+- L'origine caricata viene salvata in localStorage: al prossimo accesso non dovrai ricaricare il file.
+- Usa il pulsante **"Rimuovi / ricarica"** per cancellare la sorgente salvata e tornare al dataset predefinito.
+- Per distribuire un'origine personalizzata sempre disponibile puoi sostituire il dataset incorporato in `app.js` (`EMBEDDED_SOURCE`).
+
 ## Limitazioni note
 
 - Vengono considerate al massimo cinque varianti per ogni SKU padre (le successive vengono ignorate con messaggio informativo).
 - Alcuni browser potrebbero bloccare l'accesso ai file locali se la pagina non è servita tramite HTTP.
+- Se appare il messaggio "Libreria Papa Parse non disponibile", controlla la connessione internet o eventuali blocchi verso le CDN utilizzate (jsDelivr).
 - Le colonne del CSV vengono rilevate con nomi tolleranti, ma intestazioni completamente assenti o molto atipiche potrebbero richiedere un adattamento manuale del file sorgente.
 
 Buon lavoro!
